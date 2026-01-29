@@ -203,6 +203,8 @@ jobs:
         with:
           context: ./frontend
           push: true
+          build-args: |
+             VITE_API_URL=http://188.245.255.56:8201
           tags: |
             ${{ env.FRONTEND_IMAGE }}:latest
             ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
@@ -235,3 +237,52 @@ jobs:
             - Backend: `${{ env.BACKEND_IMAGE }}:${{ github.sha }}`
             - Frontend: `${{ env.FRONTEND_IMAGE }}:${{ github.sha }}`
           generate_release_notes: true
+
+  # ==================== DEPLOY ====================
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    needs: [release]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    env:
+      BACKEND_IMAGE: ghcr.io/eymdey/epsi-github-actions-backend:latest
+      FRONTEND_IMAGE: ghcr.io/eymdey/epsi-github-actions-frontend:latest
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 188.245.255.56
+          username: etudiant2
+          password: ${{ secrets.VPS_PASSWORD }}
+          envs: BACKEND_IMAGE,FRONTEND_IMAGE,GEMINI_API_KEY
+          script: |
+            # Login to GitHub Container Registry
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            # Pull new images
+            docker pull $BACKEND_IMAGE
+            docker pull $FRONTEND_IMAGE
+
+            # Stop and remove old containers (careful to only target etudiant2)
+            docker stop etudiant2-backend || true
+            docker rm etudiant2-backend || true
+            docker stop etudiant2-frontend || true
+            docker rm etudiant2-frontend || true
+
+            # Run new containers
+            # Backend on port 8201
+            docker run -d \
+              --name etudiant2-backend \
+              --restart unless-stopped \
+              -p 8201:3001 \
+              -e GEMINI_API_KEY=$GEMINI_API_KEY \
+              $BACKEND_IMAGE
+
+            # Frontend on port 8200 (pointing to 8201 via build arg VITE_API_URL)
+            docker run -d \
+              --name etudiant2-frontend \
+              --restart unless-stopped \
+              -p 8200:80 \
+              $FRONTEND_IMAGE
+
