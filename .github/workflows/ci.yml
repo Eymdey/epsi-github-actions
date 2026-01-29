@@ -255,6 +255,9 @@ jobs:
           host: 188.245.255.56
           username: etudiant2
           password: ${{ secrets.VPS_PASSWORD }}
+          debug: true
+          timeout: 60s
+          command_timeout: 30m
           envs: BACKEND_IMAGE,FRONTEND_IMAGE,GEMINI_API_KEY
           script: |
             # Login to GitHub Container Registry
